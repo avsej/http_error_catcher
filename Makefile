@@ -1,5 +1,5 @@
 CFLAGS=-pedantic -Wall -Wextra
-LDFLAGS=-lmicrohttpd -lriemann_c_client
+LDFLAGS=-lmicrohttpd -lriemann_c_client -pthread
 PREFIX=/usr/local
 
 .PHONY: clean install uninstall

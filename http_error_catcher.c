@@ -1,8 +1,11 @@
-#include <microhttpd.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <pthread.h>
+
+#include <microhttpd.h>
 
 #include <riemann/event.h>
 #include <riemann/message.h>
@@ -153,6 +156,27 @@ print_help()
     fprintf(stderr, "Usage: http_error_catcher -l 9000 -r localhost [-p 5555] -h example.com [-s http_error_catcher]\n");
 }
 
+void
+wait()
+{
+       pthread_mutex_t mutex;
+       pthread_cond_t cond;
+       int ret;
+
+       ret = pthread_mutex_init(&mutex, NULL);
+       if (ret != 0) {
+           fprintf(stderr, "Cannot initialize mutex\n");
+           exit(EXIT_FAILURE);
+       }
+       pthread_mutex_lock(&mutex);
+       ret = pthread_cond_init(&cond, NULL);
+       if (ret != 0) {
+           fprintf(stderr, "Cannot initialize condition variable\n");
+           exit(EXIT_FAILURE);
+       }
+       pthread_cond_wait(&cond, &mutex);
+}
+
 int main(int argc, char ** argv)
 {
     int ret;
@@ -206,7 +230,7 @@ int main(int argc, char ** argv)
         fprintf(stderr, "Cannot start HTTP daemon\n");
         exit(EXIT_FAILURE);
     }
-    getc(stdin);
+    wait();
     MHD_stop_daemon(daemon);
     return 0;
 }
