@@ -156,7 +156,7 @@ print_help()
 int main(int argc, char ** argv)
 {
     int ret;
-    struct MHD_Daemon * d;
+    struct MHD_Daemon *daemon;
     int opt, listen_port = 0, riemann_port = 5555;
     char *riemann_host = NULL;
     riemann_client_t riemann_client;
@@ -198,15 +198,15 @@ int main(int argc, char ** argv)
         exit(EXIT_FAILURE);
     }
 
-    d = MHD_start_daemon(MHD_USE_THREAD_PER_CONNECTION | MHD_USE_POLL,
-                         listen_port, NULL, NULL,
-                         &write_to_riemann, &riemann_client,
-                         MHD_OPTION_END);
-    if (d == NULL) {
+    daemon = MHD_start_daemon(MHD_USE_THREAD_PER_CONNECTION | MHD_USE_POLL,
+                              listen_port, NULL, NULL,
+                              &write_to_riemann, &riemann_client,
+                              MHD_OPTION_END);
+    if (daemon == NULL) {
         fprintf(stderr, "Cannot start HTTP daemon\n");
         exit(EXIT_FAILURE);
     }
-    (void)getc(stdin);
-    MHD_stop_daemon(d);
+    getc(stdin);
+    MHD_stop_daemon(daemon);
     return 0;
 }
