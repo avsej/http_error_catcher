@@ -1,3 +1,6 @@
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +17,8 @@
 
 const char *riemann_field_service = "http_error_catcher";
 const char *riemann_field_host = NULL;
+char *body = "OK\n";
+int body_len = 3;
 
 typedef struct attribute_list_s
 {
@@ -139,21 +144,23 @@ write_to_riemann(void *cls,
 
     {
         struct MHD_Response *response;
-        response = MHD_create_response_from_buffer(2, "OK", MHD_RESPMEM_PERSISTENT);
-        ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
-        MHD_destroy_response(response);
+        response = MHD_create_response_from_buffer(body_len, (void *)body,
+                                                   MHD_RESPMEM_PERSISTENT);
+        if (response) {
+            MHD_add_response_header(response, "Content-Type", "text/html");
+            ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
+            MHD_destroy_response(response);
+        }
     }
-    (void)cls;
     (void)version;
     (void)upload_data;
-    (void)upload_data_size;
     return ret;
 }
 
 void
 print_help()
 {
-    fprintf(stderr, "Usage: http_error_catcher -l 9000 -r localhost [-p 5555] -h example.com [-s http_error_catcher]\n");
+    fprintf(stderr, "Usage: http_error_catcher -l 9000 -r localhost [-p 5555] -h example.com [-s http_error_catcher] [-m maintainance.html]\n");
 }
 
 void
@@ -183,9 +190,10 @@ int main(int argc, char ** argv)
     struct MHD_Daemon *daemon;
     int opt, listen_port = 0, riemann_port = 5555;
     char *riemann_host = NULL;
+    char *maintainance_page = NULL;
     riemann_client_t riemann_client;
 
-    while ((opt = getopt(argc, argv, "l:r:p:s:h:")) != -1) {
+    while ((opt = getopt(argc, argv, "l:r:p:s:h:m:")) != -1) {
         switch (opt) {
         case 'l':
             listen_port = atoi(optarg);
@@ -202,6 +210,9 @@ int main(int argc, char ** argv)
         case 'h':
             riemann_field_host = strdup(optarg);
             break;
+        case 'm':
+            maintainance_page = strdup(optarg);
+            break;
         default:
             print_help();
             exit(EXIT_FAILURE);
@@ -210,6 +221,40 @@ int main(int argc, char ** argv)
     if (!listen_port || !riemann_host || !riemann_field_host) {
         print_help();
         exit(EXIT_FAILURE);
+    }
+    if (maintainance_page) {
+        int ret;
+        int fd;
+        struct stat stat;
+
+        fd = open(maintainance_page, O_RDONLY);
+        if (fd == -1) {
+            fprintf(stderr, "Can't open maintainance page '%s': strerror(%s)\n",
+                    maintainance_page, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        ret = fstat(fd, &stat);
+        if (ret != 0) {
+            fprintf(stderr, "Can't get size of maintainance page '%s': strerror(%s)\n",
+                    maintainance_page, strerror(errno));
+            close(fd);
+            exit(EXIT_FAILURE);
+        }
+        body_len = stat.st_size;
+        body = calloc(body_len, sizeof(char));
+        if (body == NULL) {
+            fprintf(stderr, "Can't allocate enough memory for content of maintainance page '%s'\n",
+                    maintainance_page);
+            close(fd);
+            exit(EXIT_FAILURE);
+        }
+        ret = read(fd, body, body_len);
+        if (ret != body_len) {
+            fprintf(stderr, "Error while reading maintainance page content '%s': strerror(%s)\n",
+                    maintainance_page, strerror(errno));
+            close(fd);
+            exit(EXIT_FAILURE);
+        }
     }
     ret = riemann_client_init(&riemann_client);
     if (ret) {
