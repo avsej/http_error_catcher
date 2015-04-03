@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <pthread.h>
+#include <arpa/inet.h>
 
 #include <microhttpd.h>
 
@@ -15,6 +16,9 @@
 #include <riemann/client.h>
 #include <riemann/attribute.h>
 
+int listen_port = 0, riemann_port = 5555;
+char *riemann_host = NULL;
+char *maintainance_page = NULL;
 const char *riemann_field_service = "http_error_catcher";
 const char *riemann_field_host = NULL;
 char *body = "OK\n";
@@ -138,8 +142,9 @@ write_to_riemann(void *cls,
 
         ret = riemann_client_send_message(riemann_client, &msg, 0, NULL);
         if (ret) {
-            fprintf(stderr, "Can't send message: %s\n", strerror(errno));
+            fprintf(stderr, "Cannot send message: %s\n", strerror(errno));
         }
+        fprintf(stderr, "Notfied riemann about '%s'\n", url);
     }
 
     {
@@ -160,7 +165,7 @@ write_to_riemann(void *cls,
 void
 print_help()
 {
-    fprintf(stderr, "Usage: http_error_catcher -l 9000 -r localhost [-p 5555] -h example.com [-s http_error_catcher] [-m maintainance.html]\n");
+    fprintf(stderr, "Usage: http-error-catcher -l 9000 -r localhost [-p 5555] -h example.com [-s http_error_catcher] [-m maintainance.html]\n");
 }
 
 void
@@ -184,15 +189,53 @@ wait()
        pthread_cond_wait(&cond, &mutex);
 }
 
+void
+init_from_env()
+{
+    char *str;
+    int num;
+
+    str = getenv("LISTEN_PORT");
+    if (str != NULL) {
+        num = atoi(str);
+        if (num > 0) {
+            listen_port = num;
+        }
+    }
+    str = getenv("RIEMANN_HOST");
+    if (str != NULL && str[0] != '\0') {
+        riemann_host = str;
+    }
+    str = getenv("RIEMANN_PORT");
+    if (str != NULL) {
+        num = atoi(str);
+        if (num > 0) {
+            riemann_port = num;
+        }
+    }
+    str = getenv("RIEMANN_FIELD_SERVICE");
+    if (str != NULL && str[0] != '\0') {
+        riemann_field_service = str;
+    }
+    str = getenv("RIEMANN_FIELD_HOST");
+    if (str != NULL && str[0] != '\0') {
+        riemann_field_host = str;
+    }
+    str = getenv("MAINTAINANCE_PAGE");
+    if (str != NULL && str[0] != '\0') {
+        maintainance_page = str;
+    }
+}
+
 int main(int argc, char ** argv)
 {
     int ret;
     struct MHD_Daemon *daemon;
-    int opt, listen_port = 0, riemann_port = 5555;
-    char *riemann_host = NULL;
-    char *maintainance_page = NULL;
+    int opt;
     riemann_client_t riemann_client;
+    struct sockaddr_in localhost_addr;
 
+    init_from_env();
     while ((opt = getopt(argc, argv, "l:r:p:s:h:m:")) != -1) {
         switch (opt) {
         case 'l':
@@ -218,7 +261,17 @@ int main(int argc, char ** argv)
             exit(EXIT_FAILURE);
         }
     }
+
     if (!listen_port || !riemann_host || !riemann_field_host) {
+        if (!listen_port) {
+            fprintf(stderr, "port to listen on is not specified (LISTEN_PORT or -l)\n");
+        }
+        if (!riemann_host) {
+            fprintf(stderr, "riemann host is not specified (RIEMANN_HOST or -r)\n");
+        }
+        if (!riemann_field_host) {
+            fprintf(stderr, "host field for riemann payload is not specified (RIEMANN_FIELD_HOST or -h)\n");
+        }
         print_help();
         exit(EXIT_FAILURE);
     }
@@ -229,13 +282,13 @@ int main(int argc, char ** argv)
 
         fd = open(maintainance_page, O_RDONLY);
         if (fd == -1) {
-            fprintf(stderr, "Can't open maintainance page '%s': strerror(%s)\n",
+            fprintf(stderr, "Cannot open maintainance page '%s': strerror(%s)\n",
                     maintainance_page, strerror(errno));
             exit(EXIT_FAILURE);
         }
         ret = fstat(fd, &stat);
         if (ret != 0) {
-            fprintf(stderr, "Can't get size of maintainance page '%s': strerror(%s)\n",
+            fprintf(stderr, "Cannot get size of maintainance page '%s': strerror(%s)\n",
                     maintainance_page, strerror(errno));
             close(fd);
             exit(EXIT_FAILURE);
@@ -243,7 +296,7 @@ int main(int argc, char ** argv)
         body_len = stat.st_size;
         body = calloc(body_len, sizeof(char));
         if (body == NULL) {
-            fprintf(stderr, "Can't allocate enough memory for content of maintainance page '%s'\n",
+            fprintf(stderr, "Cannot allocate enough memory for content of maintainance page '%s'\n",
                     maintainance_page);
             close(fd);
             exit(EXIT_FAILURE);
@@ -258,18 +311,27 @@ int main(int argc, char ** argv)
     }
     ret = riemann_client_init(&riemann_client);
     if (ret) {
-        fprintf(stderr, "Can't initialize riemann_client: strerror(%s)\n", strerror(errno));
+        fprintf(stderr, "Cannot initialize riemann_client: strerror(%s)\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
-    ret = riemann_client_connect(&riemann_client, RIEMANN_UDP, riemann_host, riemann_port);
+    ret = riemann_client_connect(&riemann_client, RIEMANN_TCP, riemann_host, riemann_port);
     if (ret) {
-        fprintf(stderr, "Can't connect: strerror(%s) gai_strerrror(%s)\n", strerror(errno), gai_strerror(ret));
+        fprintf(stderr, "Cannot connect: strerror(%s) gai_strerrror(%s)\n", strerror(errno), gai_strerror(ret));
         exit(EXIT_FAILURE);
     }
 
+    memset(&localhost_addr, 0, sizeof(struct sockaddr_in));
+    localhost_addr.sin_family = AF_INET;
+    localhost_addr.sin_port = htons(listen_port);
+    ret = inet_pton(AF_INET, "127.0.0.1", &localhost_addr.sin_addr);
+    if (ret != 1) {
+        fprintf(stderr, "Cannot construct address structure: strerror(%s)\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
     daemon = MHD_start_daemon(MHD_USE_THREAD_PER_CONNECTION | MHD_USE_POLL,
                               listen_port, NULL, NULL,
                               &write_to_riemann, &riemann_client,
+                              MHD_OPTION_SOCK_ADDR, &localhost_addr,
                               MHD_OPTION_END);
     if (daemon == NULL) {
         fprintf(stderr, "Cannot start HTTP daemon\n");

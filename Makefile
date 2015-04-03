@@ -4,15 +4,19 @@ PREFIX=/usr/local
 
 .PHONY: clean install uninstall
 
-http_error_catcher: http_error_catcher.o
+http-error-catcher: http-error-catcher.o
 	$(CC) $(CPPFLAGS) $< $(LDFLAGS) -o $@
 
 clean:
-	rm -f http_error_catcher
-	rm -f http_error_catcher.o
+	rm -f http-error-catcher
+	rm -f http-error-catcher.o
 
 install: http_error_catcher
-	install -m 555 http_error_catcher $(PREFIX)/bin/http_error_catcher
+	install -m 755 http-error-catcher $(PREFIX)/bin/http-error-catcher
+	install -m 755 http-error-catcher.env /etc/default/http-error-catcher
+	install -m 755 http-error-catcher.service /usr/lib/systemd/system/http-error-catcher.service
 
-uninstall: http_error_catcher
-	rm -f $(PREFIX)/bin/http_error_catcher
+uninstall: http-error-catcher
+	rm -f $(PREFIX)/bin/http-error-catcher
+	rm -f /etc/default/http-error-catcher
+	rm -f /usr/lib/systemd/system/http-error-catcher.service

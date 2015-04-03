@@ -1,0 +1,13 @@
+# -*- mode: conf-space; -*-
+[Unit]
+Description = http-error-catcher - HTTP backend for reporting to riemann
+Documentation = https://github.com/avsej/http_error_catcher
+After = network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type = simple
+EnvironmentFile = /etc/default/http-error-catcher
+ExecStart = /usr/bin/http-error-catcher
+
+[Install]
+WantedBy = multi-user.target

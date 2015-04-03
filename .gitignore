@@ -1,2 +1,2 @@
-http_error_catcher
-http_error_catcher.o
+http-error-catcher
+http-error-catcher.o
