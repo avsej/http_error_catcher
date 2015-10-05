@@ -145,6 +145,9 @@ write_to_riemann(void *cls,
             fprintf(stderr, "Cannot send message: %s\n", strerror(errno));
         }
         fprintf(stderr, "Notfied riemann about '%s'\n", url);
+
+        riemann_event_free(&event);
+        free(attributes);
     }
 
     {
@@ -187,6 +190,8 @@ wait()
            exit(EXIT_FAILURE);
        }
        pthread_cond_wait(&cond, &mutex);
+
+       pthread_mutex_unlock(&mutex);
 }
 
 void
@@ -339,5 +344,6 @@ int main(int argc, char ** argv)
     }
     wait();
     MHD_stop_daemon(daemon);
+    riemann_client_free(&riemann_client);
     return 0;
 }
